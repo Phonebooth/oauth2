@@ -7,6 +7,7 @@
 
 -define(DEF_AUTH_CODE_EXPIRE, 30).
 -define(DEF_ACCESS_TOKEN_EXPIRE, 60 * 60 *2).
+-define(BEARER_TOKEN_TYPE, "Bearer").
 
 authorize(ResponseType, Db, ClientId, RedirectUri, Scope, State) ->
     case Db:verify_redirect_uri(ClientId, RedirectUri) of
@@ -31,7 +32,7 @@ authorize(ResponseType, Db, ClientId, RedirectUri, Scope, State) ->
                     Db:set(auth, Key, Data),
                     {AuthCode, Data#oauth2.expires}
             end,
-            NewRedirectUri = get_redirect_uri(ResponseType, Code, RedirectUri, State),
+            NewRedirectUri = get_redirect_uri(ResponseType, {Code, Expires}, RedirectUri, State),
             {ok, Code, NewRedirectUri, calculate_expires_in(Expires)}
     end.
 
@@ -82,7 +83,7 @@ verify_token(authorization_code, Db, Token, ClientId, RedirectUri) ->
                             Db:set(access, Key, AccessData),
 
                             {ok, [{access_token, AccessToken},
-                                  {token_type, "Bearer"},
+                                  {token_type, ?BEARER_TOKEN_TYPE},
                                   {expires_in, calculate_expires_in(AccessData#oauth2.expires)}
                                  ]}
                     end;
@@ -98,21 +99,25 @@ verify_token(_, _Db, _Token, _ClientId, _RedirectUri) ->
 get_redirect_uri(Type, Code, Uri, State) ->
     get_redirect_uri(Type, Code, Uri, State, []).
 
-get_redirect_uri(Type, Code, Uri, State, _ExtraQuery) ->
+get_redirect_uri(Type, {Code, Expires}, Uri, State, _ExtraQuery) ->
     {S, N, P, Q, _} = mochiweb_util:urlsplit(Uri),
     State2 = case State of
         "" -> [];
+        undefined -> [];
         StateVal -> [{state, StateVal}]
     end,
     Q2 = mochiweb_util:parse_qs(Q),
-    CF = [{code, Code}],
     case Type of
         token ->
             Q3 = lists:append([State2, Q2]),
+            CF = [{access_token, Code}, 
+                  {expires_in, calculate_expires_in(Expires)}, 
+                  {token_type, ?BEARER_TOKEN_TYPE}],
             CF2 = mochiweb_util:urlencode(CF),
             Query = mochiweb_util:urlencode(Q3),
             mochiweb_util:urlunsplit({S, N, P, Query, CF2});
         code ->
+            CF = [{code, Code}],
             Q3 = lists:append([CF, State2, Q2]),
             Query = mochiweb_util:urlencode(Q3),
             mochiweb_util:urlunsplit({S, N, P, Query, ""})
