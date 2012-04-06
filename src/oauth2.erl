@@ -1,7 +1,7 @@
 -module(oauth2).
 
 -export([authorize/6]).
--export([verify_token/4, verify_token/5]).
+-export([verify_token/3, verify_token/4, verify_token/5]).
 
 -include_lib("include/oauth2.hrl").
 
@@ -19,9 +19,8 @@ authorize(ResponseType, Db, ClientId, RedirectUri, Scope, State) ->
                     Data = #oauth2{client_id=ClientId,
                                    expires=seconds_since_epoch(?DEF_ACCESS_TOKEN_EXPIRE),
                                    scope=Scope},
-                    AccessToken = generate_access_token(Data#oauth2.expires),
-                    Key = generate_key(ClientId, AccessToken),
-                    Db:set(access, Key, Data),
+                    AccessToken = generate_access_token(Data#oauth2.expires, ClientId),
+                    Db:set(access, AccessToken, Data),
                     {AccessToken, Data#oauth2.expires};
                 code ->
                     Data = #oauth2{client_id=ClientId,
@@ -36,8 +35,8 @@ authorize(ResponseType, Db, ClientId, RedirectUri, Scope, State) ->
             {ok, Code, NewRedirectUri, calculate_expires_in(Expires)}
     end.
 
-verify_token(access_token, Db, Token, ClientId) ->
-    case Db:get(access, generate_key(ClientId, Token)) of
+verify_token(access_token, Db, Token) ->
+    case Db:get(access, Token) of
         {ok, Data} ->
             ClientId = Data#oauth2.client_id,
             Expires = Data#oauth2.expires,
@@ -45,7 +44,7 @@ verify_token(access_token, Db, Token, ClientId) ->
 
             case calculate_expires_in(Expires) > 0 of
                 false ->
-                    Db:delete(access,  generate_key(ClientId, Token)),
+                    Db:delete(access,  Token),
                     {error, invalid_token};
                 true ->
                     {ok, [{audience, ClientId},
@@ -55,7 +54,8 @@ verify_token(access_token, Db, Token, ClientId) ->
             end;
         _ ->
             {error, invalid_token}
-    end;
+    end.
+
 verify_token(_, _Db, _Token, _ClientId) ->
     {error, invalid_token}.
 
@@ -75,12 +75,11 @@ verify_token(authorization_code, Db, Token, ClientId, RedirectUri) ->
                         false ->
                             {error, invalid_grant};
                         true ->
-                            AccessToken = generate_access_token(Expires),
+                            AccessToken = generate_access_token(Expires, ClientId),
                             AccessData = #oauth2{client_id=ClientId,
                                                  expires=seconds_since_epoch(?DEF_ACCESS_TOKEN_EXPIRE),
                                                  scope=Scope},
-                            Key = generate_key(ClientId, AccessToken),
-                            Db:set(access, Key, AccessData),
+                            Db:set(access, AccessToken, AccessData),
 
                             {ok, [{access_token, AccessToken},
                                   {token_type, ?BEARER_TOKEN_TYPE},
@@ -126,10 +125,12 @@ get_redirect_uri(Type, {Code, Expires}, Uri, State, _ExtraQuery) ->
 generate_key(ClientId, AuthCode) ->
     lists:flatten([ClientId, "#", AuthCode]).
 
-generate_access_token(Expires) ->
+generate_access_token(Expires, ClientId) ->
     S1 = generate_rnd_chars(15),
     S2 = generate_rnd_chars(15),
-    S1++"."++integer_to_list(Expires)++"."++S2.
+    S3 = binary_to_list(crypto:md5(ClientId)),
+    Token = string:join([S1, S2, integer_to_list(Expires), S3], "."),
+    mochiweb_util:quote_plus(base64:encode_to_string(Token)).
 
 generate_auth_code() ->
     generate_rnd_chars(30).
