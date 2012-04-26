@@ -15,7 +15,10 @@ authorize(client_credentials, Db, ClientId, Scope) ->
                    scope=Scope},
     AccessToken = generate_access_token(Data#oauth2.expires, ClientId),
     Db:set(access, AccessToken, Data),
-    {AccessToken, Data#oauth2.expires}.
+    {ok, [{access_token, AccessToken},
+            {token_type, ?BEARER_TOKEN_TYPE},
+            {expires_in, calculate_expires_in(Data#oauth2.expires)}
+        ]}.
 
 authorize(ResponseType, Db, ClientId, RedirectUri, Scope, State) ->
     case Db:verify_redirect_uri(ClientId, RedirectUri) of
