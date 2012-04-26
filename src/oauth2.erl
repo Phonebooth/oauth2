@@ -1,6 +1,6 @@
 -module(oauth2).
 
--export([authorize/6]).
+-export([authorize/4, authorize/6]).
 -export([verify_token/3, verify_token/4, verify_token/5]).
 
 -include_lib("include/oauth2.hrl").
@@ -8,6 +8,14 @@
 -define(DEF_AUTH_CODE_EXPIRE, 30).
 -define(DEF_ACCESS_TOKEN_EXPIRE, 60 * 60 *2).
 -define(BEARER_TOKEN_TYPE, "Bearer").
+
+authorize(client_credentials, Db, ClientId, Scope) ->
+    Data = #oauth2{client_id=ClientId,
+                   expires=seconds_since_epoch(?DEF_ACCESS_TOKEN),
+                   scope=Scope},
+    AccessToken = generate_access_token(Data#oauth2.expires, ClientId),
+    Db:set(access, AccessToken, Data),
+    {AccessToken, Data#oauth2.expires}.
 
 authorize(ResponseType, Db, ClientId, RedirectUri, Scope, State) ->
     case Db:verify_redirect_uri(ClientId, RedirectUri) of
