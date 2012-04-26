@@ -11,7 +11,7 @@
 
 authorize(client_credentials, Db, ClientId, Scope) ->
     Data = #oauth2{client_id=ClientId,
-                   expires=seconds_since_epoch(?DEF_ACCESS_TOKEN),
+                   expires=seconds_since_epoch(?DEF_ACCESS_TOKEN_EXPIRE),
                    scope=Scope},
     AccessToken = generate_access_token(Data#oauth2.expires, ClientId),
     Db:set(access, AccessToken, Data),
