@@ -119,12 +119,11 @@ get_redirect_uri(Type, {Code, Expires}, Uri, State, _ExtraQuery) ->
     Q2 = mochiweb_util:parse_qs(Q),
     case Type of
         token ->
-            Q3 = lists:append([State2, Q2]),
             CF = [{access_token, Code}, 
                   {expires_in, calculate_expires_in(Expires)}, 
-                  {token_type, ?BEARER_TOKEN_TYPE}],
+                  {token_type, ?BEARER_TOKEN_TYPE}] ++ State2,
             CF2 = mochiweb_util:urlencode(CF),
-            Query = mochiweb_util:urlencode(Q3),
+            Query = mochiweb_util:urlencode(Q2),
             mochiweb_util:urlunsplit({S, N, P, Query, CF2});
         code ->
             CF = [{code, Code}],
