@@ -13,7 +13,7 @@ authorize(client_credentials, Db, ClientId, Scope) ->
     Data = #oauth2{client_id=ClientId,
                    expires=seconds_since_epoch(?DEF_ACCESS_TOKEN_EXPIRE),
                    scope=Scope},
-    AccessToken = generate_access_token(Data#oauth2.expires, ClientId),
+    AccessToken = generate_access_token(),
     Db:set(access, AccessToken, Data),
     {ok, [{access_token, AccessToken},
             {token_type, ?BEARER_TOKEN_TYPE},
@@ -30,7 +30,7 @@ authorize(ResponseType, Db, ClientId, RedirectUri, Scope, State) ->
                     Data = #oauth2{client_id=ClientId,
                                    expires=seconds_since_epoch(?DEF_ACCESS_TOKEN_EXPIRE),
                                    scope=Scope},
-                    AccessToken = generate_access_token(Data#oauth2.expires, ClientId),
+                    AccessToken = generate_access_token(),
                     Db:set(access, AccessToken, Data),
                     {AccessToken, Data#oauth2.expires};
                 code ->
@@ -86,7 +86,7 @@ verify_token(authorization_code, Db, Token, ClientId, RedirectUri) ->
                         false ->
                             {error, invalid_grant};
                         true ->
-                            AccessToken = generate_access_token(Expires, ClientId),
+                            AccessToken = generate_access_token(),
                             AccessData = #oauth2{client_id=ClientId,
                                                  expires=seconds_since_epoch(?DEF_ACCESS_TOKEN_EXPIRE),
                                                  scope=Scope},
@@ -135,12 +135,9 @@ get_redirect_uri(Type, {Code, Expires}, Uri, State, _ExtraQuery) ->
 generate_key(ClientId, AuthCode) ->
     lists:flatten([ClientId, "#", AuthCode]).
 
-generate_access_token(Expires, ClientId) ->
-    S1 = generate_rnd_chars(15),
-    S2 = generate_rnd_chars(15),
-    S3 = binary_to_list(crypto:md5(ClientId)),
-    Token = string:join([S1, S2, integer_to_list(Expires), S3], "."),
-    mochiweb_util:quote_plus(base64:encode_to_string(Token)).
+generate_access_token() ->
+    Uuid = uuid:to_string(uuid:v4()),
+    string:join(string:tokens(Uuid, "-"), "").
 
 generate_auth_code() ->
     generate_rnd_chars(30).
