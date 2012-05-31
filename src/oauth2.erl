@@ -2,6 +2,7 @@
 
 -export([authorize/4, authorize/6]).
 -export([verify_token/3, verify_token/4, verify_token/5]).
+-export([invalidate_token/3]).
 
 -include_lib("include/oauth2.hrl").
 
@@ -103,6 +104,10 @@ verify_token(authorization_code, Db, Token, ClientId, RedirectUri) ->
     end;
 verify_token(_, _Db, _Token, _ClientId, _RedirectUri) ->
     {error, invalid_token}.
+
+invalidate_token(access_token, Db, Token) ->
+    Db:delete(access, Token),
+    ok.
 
 %% Internal API
 %%
