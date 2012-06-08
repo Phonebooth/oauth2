@@ -3,16 +3,17 @@
 -export([authorize/4, authorize/6]).
 -export([verify_token/3, verify_token/4, verify_token/5]).
 -export([invalidate_token/3]).
+-export([calculate_expires_in/1, microseconds_since_epoch/1]).
 
 -include_lib("include/oauth2.hrl").
 
--define(DEF_AUTH_CODE_EXPIRE, 30).
--define(DEF_ACCESS_TOKEN_EXPIRE, 60 * 60 *2).
+-define(DEF_AUTH_CODE_EXPIRE, 30 * 1000000).
+-define(DEF_ACCESS_TOKEN_EXPIRE, 60 * 60 * 2 * 1000000).
 -define(BEARER_TOKEN_TYPE, "Bearer").
 
 authorize(client_credentials, Db, ClientId, Scope) ->
     Data = #oauth2{client_id=ClientId,
-                   expires=seconds_since_epoch(?DEF_ACCESS_TOKEN_EXPIRE),
+                   expires=microseconds_since_epoch(?DEF_ACCESS_TOKEN_EXPIRE),
                    scope=Scope},
     AccessToken = generate_access_token(),
     Db:set(access, AccessToken, Data),
@@ -29,14 +30,14 @@ authorize(ResponseType, Db, ClientId, RedirectUri, Scope, State) ->
             {Code, Expires} = case ResponseType of
                 token ->
                     Data = #oauth2{client_id=ClientId,
-                                   expires=seconds_since_epoch(?DEF_ACCESS_TOKEN_EXPIRE),
+                                   expires=microseconds_since_epoch(?DEF_ACCESS_TOKEN_EXPIRE),
                                    scope=Scope},
                     AccessToken = generate_access_token(),
                     Db:set(access, AccessToken, Data),
                     {AccessToken, Data#oauth2.expires};
                 code ->
                     Data = #oauth2{client_id=ClientId,
-                                   expires=seconds_since_epoch(?DEF_AUTH_CODE_EXPIRE),
+                                   expires=microseconds_since_epoch(?DEF_AUTH_CODE_EXPIRE),
                                    scope=Scope},
                     AuthCode = generate_auth_code(),
                     Key = generate_key(ClientId, AuthCode),
@@ -89,7 +90,7 @@ verify_token(authorization_code, Db, Token, ClientId, RedirectUri) ->
                         true ->
                             AccessToken = generate_access_token(),
                             AccessData = #oauth2{client_id=ClientId,
-                                                 expires=seconds_since_epoch(?DEF_ACCESS_TOKEN_EXPIRE),
+                                                 expires=microseconds_since_epoch(?DEF_ACCESS_TOKEN_EXPIRE),
                                                  scope=Scope},
                             Db:set(access, AccessToken, AccessData),
 
@@ -160,9 +161,9 @@ rnd_auth(C) ->
     element(random:uniform(tuple_size(C)), C).
 
 calculate_expires_in(Expire) ->
-    Expire - seconds_since_epoch(0).
+    Expire - microseconds_since_epoch(0).
 
-seconds_since_epoch(Diff) ->
-    {Mega, Secs, _Micro} = now(),
-    Mega * 1000000 + Secs + Diff.
+microseconds_since_epoch(Diff) ->
+    {Mega, Secs, Micro} = now(),
+    (Mega * 1000000 + Secs)*1000000 + Micro + Diff.
 
