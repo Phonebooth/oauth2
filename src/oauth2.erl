@@ -3,7 +3,7 @@
 -export([authorize/4, authorize/6]).
 -export([verify_token/3, verify_token/4, verify_token/5]).
 -export([invalidate_token/3]).
--export([calculate_expires_in/1, microseconds_since_epoch/1]).
+-export([calculate_expires_in/1, microseconds_since_epoch/1, calculate_expires_in_sec/1]).
 
 -include_lib("include/oauth2.hrl").
 
@@ -19,7 +19,7 @@ authorize(client_credentials, Db, ClientId, Scope) ->
     Db:set(access, AccessToken, Data),
     {ok, [{access_token, AccessToken},
             {token_type, ?BEARER_TOKEN_TYPE},
-            {expires_in, calculate_expires_in(Data#oauth2.expires)}
+            {expires_in, calculate_expires_in_sec(Data#oauth2.expires)}
         ]}.
 
 authorize(ResponseType, Db, ClientId, RedirectUri, Scope, State) ->
@@ -45,7 +45,7 @@ authorize(ResponseType, Db, ClientId, RedirectUri, Scope, State) ->
                     {AuthCode, Data#oauth2.expires}
             end,
             NewRedirectUri = get_redirect_uri(ResponseType, {Code, Expires}, RedirectUri, State),
-            {ok, Code, NewRedirectUri, calculate_expires_in(Expires)}
+            {ok, Code, NewRedirectUri, calculate_expires_in_sec(Expires)}
     end.
 
 verify_token(access_token, Db, Token) ->
@@ -62,7 +62,7 @@ verify_token(access_token, Db, Token) ->
                 true ->
                     {ok, [{audience, ClientId},
                           {scope, Scope},
-                          {expires_in, calculate_expires_in(Expires)}
+                          {expires_in, calculate_expires_in_sec(Expires)}
                          ]}
             end;
         _ ->
@@ -96,7 +96,7 @@ verify_token(authorization_code, Db, Token, ClientId, RedirectUri) ->
 
                             {ok, [{access_token, AccessToken},
                                   {token_type, ?BEARER_TOKEN_TYPE},
-                                  {expires_in, calculate_expires_in(AccessData#oauth2.expires)}
+                                  {expires_in, calculate_expires_in_sec(AccessData#oauth2.expires)}
                                  ]}
                     end;
                 _ ->
@@ -126,7 +126,7 @@ get_redirect_uri(Type, {Code, Expires}, Uri, State, _ExtraQuery) ->
     case Type of
         token ->
             CF = [{access_token, Code}, 
-                  {expires_in, calculate_expires_in(Expires)}, 
+                  {expires_in, calculate_expires_in_sec(Expires)}, 
                   {token_type, ?BEARER_TOKEN_TYPE}] ++ State2,
             CF2 = mochiweb_util:urlencode(CF),
             Query = mochiweb_util:urlencode(Q2),
@@ -160,7 +160,10 @@ rnd_auth(Len, C) ->
 rnd_auth(C) ->
     element(random:uniform(tuple_size(C)), C).
 
-calculate_expires_in(Expire) ->
+calculate_expires_in_sec(Expire) ->
+    erlang:trunc(calculate_expires_in(Expire) / 1000000).
+
+calculate_expires_in(Expire) -> 
     Expire - microseconds_since_epoch(0).
 
 microseconds_since_epoch(Diff) ->
