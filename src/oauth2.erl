@@ -148,7 +148,13 @@ generate_auth_code() ->
     strong_random_hex(32).
 
 strong_random_hex(Length) when (Length rem 2 =:= 0) ->
-    binary_to_base16(crypto:strong_rand_bytes(Length div 2)).
+    RandBytes = case catch crypto:strong_rand_bytes(Length div 2) of
+        {'EXIT', {low_entropy, _}} ->
+            crypto:rand_bytes(Length div 2);
+        Value ->
+            Value
+    end,
+    binary_to_base16(RandBytes).
 
 binary_to_base16(Bin) ->
     binary_to_base16(Bin, []).
