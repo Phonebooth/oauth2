@@ -7,7 +7,7 @@
 
 -include_lib("include/oauth2.hrl").
 
--define(DEF_AUTH_CODE_EXPIRE, 30 * 1000000).
+-define(DEF_AUTH_CODE_EXPIRE, 2 * 60 * 1000000).
 -define(DEF_ACCESS_TOKEN_EXPIRE, 60 * 60 * 2 * 1000000).
 -define(BEARER_TOKEN_TYPE, "Bearer").
 
