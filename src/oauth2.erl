@@ -142,23 +142,23 @@ generate_key(ClientId, AuthCode) ->
     lists:flatten([ClientId, "#", AuthCode]).
 
 generate_access_token() ->
-    Uuid = uuid:to_string(uuid:v4()),
-    string:join(string:tokens(Uuid, "-"), "").
+    strong_random_hex(32).
 
 generate_auth_code() ->
-    generate_rnd_chars(30).
+    strong_random_hex(32).
 
-generate_rnd_chars(N) ->
-    Chars = list_to_tuple("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-"),
-    random:seed(now()),
-    rnd_auth(N, Chars).
+strong_random_hex(Length) when (Length rem 2 =:= 0) ->
+    binary_to_base16(crypto:strong_rand_bytes(Length div 2)).
 
-rnd_auth(0, _) ->
-    [];
-rnd_auth(Len, C) ->
-    [rnd_auth(C)|rnd_auth(Len-1, C)].
-rnd_auth(C) ->
-    element(random:uniform(tuple_size(C)), C).
+binary_to_base16(Bin) ->
+    binary_to_base16(Bin, []).
+
+binary_to_base16(<<>>, Result) ->
+    lists:reverse(Result);
+binary_to_base16(<<N:4, Rest/bitstring>>, Result) when N =< 9 ->
+    binary_to_base16(Rest, [48+N|Result]);
+binary_to_base16(<<N:4, Rest/bitstring>>, Result) ->
+    binary_to_base16(Rest, [97+(N-10)|Result]).
 
 calculate_expires_in_sec(Expire) ->
     erlang:trunc(calculate_expires_in(Expire) / 1000000).
