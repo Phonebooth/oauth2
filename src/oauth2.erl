@@ -1,7 +1,7 @@
 -module(oauth2).
 
--export([authorize/4, authorize/6]).
--export([verify_token/3, verify_token/4, verify_token/5]).
+-export([authorize/4, authorize/5, authorize/6]).
+-export([verify_token/3, verify_token/5]).
 -export([invalidate_token/3]).
 -export([calculate_expires_in/1, microseconds_since_epoch/1, calculate_expires_in_sec/1]).
 
@@ -11,17 +11,26 @@
 -define(DEF_ACCESS_TOKEN_EXPIRE, 60 * 60 * 2 * 1000000).
 -define(BEARER_TOKEN_TYPE, "Bearer").
 
+%% Creates an access token for a client_credentials grant. The client is authenticated in the web layer.
 authorize(client_credentials, Db, ClientId, Scope) ->
-    Data = #oauth2{client_id=ClientId,
-                   expires=microseconds_since_epoch(?DEF_ACCESS_TOKEN_EXPIRE),
-                   scope=Scope},
-    AccessToken = generate_access_token(),
-    Db:set(access, AccessToken, Data),
-    {ok, [{access_token, AccessToken},
-            {token_type, ?BEARER_TOKEN_TYPE},
-            {expires_in, calculate_expires_in_sec(Data#oauth2.expires)}
-        ]}.
+    success_response(create_access_token(Db, ClientId, Scope, true)).
 
+%% Exchanges a refresh token for a new access token.
+authorize(refresh_token, Db, RefreshToken, ClientId, Scope) ->
+    case Db:get(refresh, RefreshToken) of
+        {ok, #oauth2{client_id=ClientId, scope=Scope, related=OldAccessToken}} ->
+            {NewAccessToken, NewAccessTokenData, NewRefreshToken} = create_access_token(Db, ClientId, Scope, true),
+            Db:redeem(refresh, RefreshToken, OldAccessToken, NewAccessToken),
+            success_response({NewAccessToken, NewAccessTokenData, NewRefreshToken});
+        _ ->
+            {error, invalid_token}
+    end.
+
+
+%% Creates either an authorization code or an access token depending on the
+%% specified response type. 'token' indicates the implicit flow and creates
+%% an access token. 'code' indicates the authorization_code flow and creates
+%% a short-lived authorization code.
 authorize(ResponseType, Db, ClientId, RedirectUri, Scope, State) ->
     case Db:verify_redirect_uri(ClientId, RedirectUri) of
         false ->
@@ -29,25 +38,19 @@ authorize(ResponseType, Db, ClientId, RedirectUri, Scope, State) ->
         true ->
             {Code, Expires} = case ResponseType of
                 token ->
-                    Data = #oauth2{client_id=ClientId,
-                                   expires=microseconds_since_epoch(?DEF_ACCESS_TOKEN_EXPIRE),
-                                   scope=Scope},
-                    AccessToken = generate_access_token(),
-                    Db:set(access, AccessToken, Data),
-                    {AccessToken, Data#oauth2.expires};
+                    % this is the implicit flow, so no refresh token ever
+                    {AccessToken, AccessTokenData, _} = create_access_token(Db, ClientId, Scope, false),
+                    {AccessToken, AccessTokenData#oauth2.expires};
                 code ->
-                    Data = #oauth2{client_id=ClientId,
-                                   expires=microseconds_since_epoch(?DEF_AUTH_CODE_EXPIRE),
-                                   scope=Scope},
-                    AuthCode = generate_auth_code(),
-                    Key = generate_key(ClientId, AuthCode),
-                    Db:set(auth, Key, Data),
-                    {AuthCode, Data#oauth2.expires}
+                    {AuthCode, AuthCodeData} = create_auth_code(Db, ClientId, Scope),
+                    {AuthCode, AuthCodeData#oauth2.expires}
             end,
             NewRedirectUri = get_redirect_uri(ResponseType, {Code, Expires}, RedirectUri, State),
             {ok, Code, NewRedirectUri, calculate_expires_in_sec(Expires)}
     end.
 
+%% Verifies the validity of an access token and, given that the token is
+%% valid, returns the data associated with that token.
 verify_token(access_token, Db, Token) ->
     case Db:get(access, Token) of
         {ok, Data} ->
@@ -69,9 +72,8 @@ verify_token(access_token, Db, Token) ->
             {error, invalid_token}
     end.
 
-verify_token(_, _Db, _Token, _ClientId) ->
-    {error, invalid_token}.
-
+%% Verifies the validity of an authorization code and, given that the code
+%% is valid, exchanges the authorization code for an access token.
 verify_token(authorization_code, Db, Token, ClientId, RedirectUri) ->
     case Db:verify_redirect_uri(ClientId, RedirectUri) of
         false ->
@@ -88,16 +90,7 @@ verify_token(authorization_code, Db, Token, ClientId, RedirectUri) ->
                         false ->
                             {error, invalid_grant};
                         true ->
-                            AccessToken = generate_access_token(),
-                            AccessData = #oauth2{client_id=ClientId,
-                                                 expires=microseconds_since_epoch(?DEF_ACCESS_TOKEN_EXPIRE),
-                                                 scope=Scope},
-                            Db:set(access, AccessToken, AccessData),
-
-                            {ok, [{access_token, AccessToken},
-                                  {token_type, ?BEARER_TOKEN_TYPE},
-                                  {expires_in, calculate_expires_in_sec(AccessData#oauth2.expires)}
-                                 ]}
+                            success_response(create_access_token(Db, ClientId, Scope, is_refresh_enabled(Db, ClientId)))
                     end;
                 _ ->
                     {error, invalid_grant}
@@ -107,11 +100,61 @@ verify_token(_, _Db, _Token, _ClientId, _RedirectUri) ->
     {error, invalid_token}.
 
 invalidate_token(access_token, Db, Token) ->
+    case Db:get(access, Token) of
+        {ok, #oauth2{related=undefined}} ->
+            ok;
+        {ok, #oauth2{related=Refresh}} ->
+            Db:delete(refresh, Refresh);
+        _ ->
+            ok
+    end,
     Db:delete(access, Token),
     ok.
 
 %% Internal API
 %%
+
+create_auth_code(Db, ClientId, Scope) ->
+    AuthCode = generate_auth_code(),
+    Key = generate_key(ClientId, AuthCode),
+    AuthCodeData = #oauth2{
+        client_id=ClientId,
+        scope=Scope,
+        expires=microseconds_since_epoch(?DEF_AUTH_CODE_EXPIRE)
+    },
+    Db:set(auth, Key, AuthCodeData),
+    {AuthCode, AuthCodeData}.
+
+create_access_token(Db, ClientId, Scope, HasRefresh) ->
+    AccessToken = generate_access_token(),
+    RefreshToken = case HasRefresh of
+        true ->
+            RT = generate_access_token(),
+            RTData = #oauth2{client_id=ClientId, scope=Scope, related=AccessToken},
+            Db:set(refresh, RT, RTData),
+            RT;
+        _ ->
+            undefined
+    end,
+    AccessTokenData = #oauth2{
+        client_id=ClientId, 
+        scope=Scope, 
+        expires=microseconds_since_epoch(?DEF_ACCESS_TOKEN_EXPIRE),
+        related=RefreshToken
+    },
+    Db:set(access, AccessToken, AccessTokenData),
+    {AccessToken, AccessTokenData, RefreshToken}.
+
+success_response({AccessToken, #oauth2{expires=Expires}, RefreshToken}) ->
+    {ok, [{access_token, AccessToken},
+            {token_type, ?BEARER_TOKEN_TYPE},
+            {expires_in, calculate_expires_in_sec(Expires)},
+            {refresh_token, RefreshToken}
+        ]}.
+
+is_refresh_enabled(Db, ClientId) ->
+    Db:verify_client_capability(ClientId, refresh_tokens).
+
 get_redirect_uri(Type, Code, Uri, State) ->
     get_redirect_uri(Type, Code, Uri, State, []).
 

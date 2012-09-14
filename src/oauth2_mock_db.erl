@@ -1,7 +1,7 @@
 -module(oauth2_mock_db).
 
 -export([get/2, set/3, delete/2]).
--export([verify_redirect_uri/2]).
+-export([verify_redirect_uri/2, verify_client_capability/2, redeem/4]).
 
 -include_lib("include/oauth2.hrl").
 
@@ -31,6 +31,12 @@ delete(access, Key) ->
 
 verify_redirect_uri(_, _) ->
     true.
+
+verify_client_capability(_, _) ->
+    true.
+
+redeem(_,_,_,_) ->
+    ok.
 
 %%
 %% Non behavioral functions
