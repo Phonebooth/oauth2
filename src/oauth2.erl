@@ -17,13 +17,18 @@ authorize(client_credentials, Db, ClientId, Scope) ->
 
 %% Exchanges a refresh token for a new access token.
 authorize(refresh_token, Db, RefreshToken, ClientId, Scope) ->
-    case Db:get(refresh, RefreshToken) of
-        {ok, #oauth2{client_id=ClientId, scope=Scope, related=OldAccessToken}} ->
-            {NewAccessToken, NewAccessTokenData, NewRefreshToken} = create_access_token(Db, ClientId, Scope, true),
-            Db:redeem(refresh, RefreshToken, OldAccessToken, NewAccessToken),
-            success_response({NewAccessToken, NewAccessTokenData, NewRefreshToken});
+    case is_refresh_enabled(Db, ClientId) of
+        true ->
+            case Db:get(refresh, RefreshToken) of
+                {ok, #oauth2{client_id=ClientId, scope=Scope, related=OldAccessToken}} ->
+                    {NewAccessToken, NewAccessTokenData, NewRefreshToken} = create_access_token(Db, ClientId, Scope, true),
+                    Db:redeem(refresh, RefreshToken, OldAccessToken, NewAccessToken),
+                    success_response({NewAccessToken, NewAccessTokenData, NewRefreshToken});
+                _ ->
+                    {error, invalid_token}
+            end;
         _ ->
-            {error, invalid_token}
+            {error, insufficient_client_privileges}
     end.
 
 
