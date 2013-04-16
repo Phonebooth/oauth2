@@ -13,7 +13,10 @@
 
 %% Creates an access token for a client_credentials grant. The client is authenticated in the web layer.
 authorize(client_credentials, Db, ClientId, Scope) ->
+    success_response(create_access_token(Db, ClientId, Scope, true));
+authorize(password, Db, ClientId, Scope) ->
     success_response(create_access_token(Db, ClientId, Scope, true)).
+
 
 %% Exchanges a refresh token for a new access token.
 authorize(refresh_token, Db, RefreshToken, ClientId, Scope) ->
